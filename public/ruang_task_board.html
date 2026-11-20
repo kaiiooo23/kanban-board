@@ -1,0 +1,1457 @@
+<!DOCTYPE html>
+<html lang="id" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ruang — Task board</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            serif: ['"Instrument Serif"', 'serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            paper: '#F8F7F4',
+            ink: '#18181B',
+            indigoBrand: '#5E5CE6',
+          },
+          boxShadow: {
+            'tactile': '0 1px 2px rgba(24,24,27,0.04), 0 4px 12px rgba(24,24,27,0.03)',
+            'tactile-hover': '0 8px 24px -4px rgba(24,24,27,0.08), 0 2px 6px rgba(24,24,27,0.04)',
+            'bento': '0 2px 10px rgba(94, 92, 230, 0.06)',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Subtle paper grain & tactile scrollbars */
+    body {
+      background-color: #F8F7F4;
+      color: #18181B;
+      background-image: radial-gradient(rgba(24, 24, 27, 0.045) 1px, transparent 0);
+      background-size: 24px 24px;
+    }
+    html.dark body {
+      background-color: #111114;
+      color: #F4F4F5;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 0);
+      background-size: 24px 24px;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(161, 161, 170, 0.35);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(161, 161, 170, 0.6);
+    }
+
+    /* Drag & Drop Visual States */
+    .task-card {
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+    }
+    .task-card.dragging {
+      opacity: 0.45;
+      transform: rotate(2deg) scale(0.98);
+      border-color: #5E5CE6;
+    }
+    .kanban-dropzone {
+      transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+    .kanban-dropzone.drag-over {
+      background-color: rgba(94, 92, 230, 0.07);
+      border-color: #5E5CE6;
+      box-shadow: inset 0 0 0 2px rgba(94, 92, 230, 0.25);
+    }
+    html.dark .kanban-dropzone.drag-over {
+      background-color: rgba(94, 92, 230, 0.14);
+    }
+
+    /* Animated Progress Ring */
+    .progress-ring-circle {
+      transition: stroke-dashoffset 0.65s cubic-bezier(0.34, 1.56, 0.64, 1);
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+    }
+
+    /* Toast animation */
+    @keyframes slideUpFade {
+      from { opacity: 0; transform: translateY(16px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .toast-enter {
+      animation: slideUpFade 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    /* Modal backdrop animation */
+    @keyframes modalIn {
+      from { opacity: 0; transform: translateY(10px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .modal-animate {
+      animation: modalIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+  </style>
+</head>
+<body class="antialiased selection:bg-[#5E5CE6]/20 selection:text-[#5E5CE6]">
+  <div id="app" class="min-h-screen flex flex-col lg:flex-row">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 z-40 bg-zinc-950/40 backdrop-blur-xs hidden lg:hidden transition-opacity" onclick="toggleMobileSidebar(false)"></div>
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="fixed lg:sticky top-0 left-0 z-50 h-screen w-[272px] shrink-0 bg-white/95 dark:bg-[#17171B]/95 backdrop-blur-md border-r border-zinc-200/80 dark:border-zinc-800/80 flex flex-col justify-between p-4 transition-transform duration-300 -translate-x-full lg:translate-x-0">
+      <div class="space-y-5 overflow-y-auto pr-1">
+        <!-- Brand Header -->
+        <div class="flex items-center justify-between px-2 pt-1">
+          <a href="#dashboard" class="flex items-center gap-2.5 group">
+            <span class="grid grid-cols-2 gap-1 p-1.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-xs group-hover:rotate-6 transition-transform">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#5E5CE6]"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+            </span>
+            <span class="text-xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
+              ruang<span class="text-[#5E5CE6]">.</span>
+            </span>
+          </a>
+          <button onclick="toggleMobileSidebar(false)" class="lg:hidden p-1.5 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" aria-label="Tutup menu">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Workspace Selector -->
+        <button onclick="cycleWorkspace()" class="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-[#F8F7F4] dark:bg-zinc-900/90 border border-zinc-200/80 dark:border-zinc-800 hover:border-[#5E5CE6]/40 transition-all text-left group">
+          <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#5E5CE6] to-violet-600 text-white font-bold text-sm flex items-center justify-center shadow-xs shrink-0">
+            S
+          </span>
+          <span class="flex-1 min-w-0">
+            <strong class="block text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">Studio Kreatif</strong>
+            <small class="block text-xs text-zinc-500 dark:text-zinc-400">Pro Workspace • 5 Anggota</small>
+          </span>
+          <i data-lucide="chevrons-up-down" class="w-4 h-4 text-zinc-400 group-hover:text-zinc-700 dark:group-hover:text-zinc-200 transition-colors"></i>
+        </button>
+
+        <!-- Primary Navigation -->
+        <nav class="space-y-1" aria-label="Navigasi utama">
+          <p class="px-3 pb-1 text-[11px] font-bold tracking-wider uppercase text-zinc-400 dark:text-zinc-500">Menu Utama</p>
+          
+          <a href="#overview" onclick="setActiveNav(this)" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/80 dark:hover:bg-zinc-800/70 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
+            <i data-lucide="layout-grid" class="w-4 h-4"></i>
+            <span class="flex-1">Overview</span>
+          </a>
+
+          <a href="#board" onclick="setActiveNav(this)" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold bg-[#5E5CE6]/10 text-[#5E5CE6] dark:bg-[#5E5CE6]/20 dark:text-indigo-300 transition-colors">
+            <i data-lucide="kanban" class="w-4 h-4"></i>
+            <span class="flex-1">Task board</span>
+            <span id="sidebarTaskCount" class="px-2 py-0.5 text-xs font-mono font-semibold rounded-full bg-[#5E5CE6] text-white">8</span>
+          </a>
+
+          <a href="#team" onclick="setActiveNav(this)" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/80 dark:hover:bg-zinc-800/70 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
+            <i data-lucide="users" class="w-4 h-4"></i>
+            <span class="flex-1">Tim saya</span>
+          </a>
+
+          <a href="#board" onclick="setActiveNav(this); toggleSortMode()" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/80 dark:hover:bg-zinc-800/70 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
+            <i data-lucide="calendar-days" class="w-4 h-4"></i>
+            <span class="flex-1">Kalender</span>
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300">Nov</span>
+          </a>
+        </nav>
+
+        <!-- Projects Section -->
+        <div class="space-y-1 pt-2">
+          <div class="flex items-center justify-between px-3 pb-1">
+            <p class="text-[11px] font-bold tracking-wider uppercase text-zinc-400 dark:text-zinc-500">Workspace Proyek</p>
+            <button onclick="openCreateModal('todo')" class="text-zinc-400 hover:text-[#5E5CE6] transition-colors" title="Tambah tugas cepat">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+
+          <button onclick="selectProject('Product launch', this)" class="project-btn w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold bg-zinc-100 dark:bg-zinc-800/90 text-zinc-900 dark:text-white transition-all">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#5E5CE6] ring-4 ring-[#5E5CE6]/15"></span>
+            <span class="flex-1 text-left truncate">Product launch</span>
+            <span class="text-xs text-zinc-400">•••</span>
+          </button>
+
+          <button onclick="selectProject('Website refresh', this)" class="project-btn w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50 transition-all">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+            <span class="flex-1 text-left truncate">Website refresh</span>
+          </button>
+
+          <button onclick="selectProject('Brand guidelines', this)" class="project-btn w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50 transition-all">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <span class="flex-1 text-left truncate">Brand guidelines</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Bottom Profile & Settings -->
+      <div class="pt-4 border-t border-zinc-200/80 dark:border-zinc-800 space-y-2">
+        <button onclick="resetDefaultData()" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 hover:text-rose-600 dark:hover:text-rose-400 transition-colors">
+          <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+          <span>Reset data default</span>
+        </button>
+
+        <div class="flex items-center gap-3 p-2.5 rounded-2xl bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800">
+          <span class="w-9 h-9 rounded-full bg-gradient-to-tr from-[#5E5CE6] to-fuchsia-500 text-white text-xs font-bold flex items-center justify-center shrink-0 shadow-xs">
+            AK
+          </span>
+          <div class="flex-1 min-w-0">
+            <strong class="block text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">Alexandra Kim</strong>
+            <small class="block text-[11px] text-zinc-500 dark:text-zinc-400 truncate">alex@ruang.design</small>
+          </div>
+          <span class="w-2 h-2 rounded-full bg-emerald-500" title="Online"></span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN PANEL -->
+    <div class="flex-1 flex flex-col min-w-0">
+      
+      <!-- TOPBAR -->
+      <header class="sticky top-0 z-30 h-16 px-4 sm:px-8 bg-[#F8F7F4]/85 dark:bg-[#111114]/85 backdrop-blur-md border-b border-zinc-200/70 dark:border-zinc-800/80 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-2.5 text-sm">
+          <button onclick="toggleMobileSidebar(true)" class="lg:hidden p-2 -ml-2 rounded-xl text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200/60 dark:hover:bg-zinc-800" aria-label="Buka menu">
+            <i data-lucide="menu" class="w-5 h-5"></i>
+          </button>
+          <span class="text-zinc-400 dark:text-zinc-500 hidden sm:inline">Workspace</span>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-zinc-400 hidden sm:inline"></i>
+          <span id="currentProjectBreadcrumb" class="font-bold text-zinc-900 dark:text-white px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 shadow-2xs">
+            Product launch
+          </span>
+        </div>
+
+        <div class="flex items-center gap-2.5 sm:gap-3">
+          <!-- Global Search -->
+          <label class="relative flex items-center w-44 sm:w-64 md:w-72">
+            <i data-lucide="search" class="w-4 h-4 text-zinc-400 absolute left-3 pointer-events-none"></i>
+            <input
+              id="searchInput"
+              type="text"
+              placeholder="Cari tugas atau label..."
+              oninput="handleSearch(this.value)"
+              class="w-full h-9 pl-9 pr-14 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-[#5E5CE6] focus:ring-3 focus:ring-[#5E5CE6]/15 transition-all"
+            />
+            <button id="clearSearchBtn" onclick="clearSearch()" class="hidden absolute right-10 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200" aria-label="Hapus pencarian">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            </button>
+            <kbd class="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800 rounded-md border border-zinc-200 dark:border-zinc-700 absolute right-2 pointer-events-none">
+              ⌘K
+            </kbd>
+          </label>
+
+          <!-- Dark Mode Toggle -->
+          <button onclick="toggleDarkMode()" class="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:border-[#5E5CE6]/50 hover:text-[#5E5CE6] transition-all shadow-2xs" aria-label="Ganti tema gelap/terang" title="Ganti Tema">
+            <i data-lucide="moon" class="w-4 h-4 dark:hidden"></i>
+            <i data-lucide="sun" class="w-4 h-4 hidden dark:block text-amber-400"></i>
+          </button>
+
+          <!-- Notification Bell -->
+          <div class="relative">
+            <button onclick="toggleNotifications()" class="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:border-[#5E5CE6]/50 transition-all shadow-2xs relative" aria-label="Notifikasi">
+              <i data-lucide="bell" class="w-4 h-4"></i>
+              <span id="notifDot" class="w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-zinc-900 absolute top-2 right-2"></span>
+            </button>
+            <!-- Notification Popover -->
+            <div id="notifPopover" class="hidden absolute right-0 mt-2 w-72 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl p-3.5 z-50 modal-animate">
+              <div class="flex items-center justify-between pb-2 mb-2 border-b border-zinc-100 dark:border-zinc-800">
+                <span class="text-xs font-bold text-zinc-900 dark:text-white">Aktivitas Terbaru</span>
+                <span class="text-[11px] font-medium text-[#5E5CE6]">2 baru</span>
+              </div>
+              <div class="space-y-2.5 text-xs">
+                <div class="flex items-start gap-2.5">
+                  <span class="w-6 h-6 rounded-full bg-amber-500/15 text-amber-600 font-bold flex items-center justify-center shrink-0 text-[10px]">MC</span>
+                  <p class="text-zinc-600 dark:text-zinc-300 leading-relaxed"><strong class="text-zinc-900 dark:text-white">Maya</strong> memperbarui checklist pada <em>Rancang design system</em>.</p>
+                </div>
+                <div class="flex items-start gap-2.5">
+                  <span class="w-6 h-6 rounded-full bg-emerald-500/15 text-emerald-600 font-bold flex items-center justify-center shrink-0 text-[10px]">RP</span>
+                  <p class="text-zinc-600 dark:text-zinc-300 leading-relaxed"><strong class="text-zinc-900 dark:text-white">Raka</strong> menambahkan komentar pada ilustrasi produk.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <span class="hidden sm:flex w-9 h-9 rounded-full bg-gradient-to-tr from-[#5E5CE6] to-fuchsia-500 text-white text-xs font-bold items-center justify-center shadow-xs">
+            AK
+          </span>
+        </div>
+      </header>
+
+      <!-- MAIN WORKSPACE CONTENT -->
+      <main id="dashboard" class="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-8">
+        
+        <!-- HERO WELCOME BANNER -->
+        <section id="overview" class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div class="space-y-1.5">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-[11px] font-mono font-semibold tracking-wider text-zinc-500 dark:text-zinc-400 shadow-2xs">
+              <span class="w-2 h-2 rounded-full bg-[#5E5CE6] animate-pulse"></span>
+              HARI JUMAT, 20 NOVEMBER 2026
+            </div>
+            <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
+              Selamat pagi, <span class="font-serif italic font-normal text-4xl sm:text-5xl text-[#5E5CE6]">Alex</span> <span class="inline-block animate-bounce">✦</span>
+            </h1>
+            <p class="text-sm sm:text-base text-zinc-500 dark:text-zinc-400 max-w-xl">
+              Ide bagus dimulai dari langkah kecil. Yuk, lanjutkan progresmu hari ini dengan ritme yang tenang.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-3 self-start md:self-auto">
+            <button onclick="openCreateModal('todo')" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-900 dark:bg-[#5E5CE6] hover:bg-[#5E5CE6] dark:hover:bg-indigo-500 text-white text-sm font-semibold shadow-tactile hover:shadow-lg active:scale-[0.98] transition-all cursor-pointer">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>Buat tugas</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- NEO-BENTO STATS GRID -->
+        <section class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5" aria-label="Ringkasan statistik">
+          
+          <!-- Bento 1: Total Tugas -->
+          <article class="relative overflow-hidden rounded-3xl bg-white dark:bg-[#17171B] p-5 sm:p-6 border border-zinc-200/80 dark:border-zinc-800 shadow-tactile flex flex-col justify-between group">
+            <div class="flex items-center justify-between">
+              <span class="w-10 h-10 rounded-2xl bg-[#5E5CE6]/10 text-[#5E5CE6] flex items-center justify-center">
+                <i data-lucide="target" class="w-5 h-5"></i>
+              </span>
+              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-[#5E5CE6]/10 text-[#5E5CE6] dark:text-indigo-300">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Project aktif
+              </span>
+            </div>
+            <div class="my-4">
+              <div class="flex items-baseline gap-2">
+                <span id="statTotal" class="text-4xl font-extrabold tracking-tight font-mono text-zinc-900 dark:text-white">8</span>
+                <span class="text-xs font-medium text-zinc-400">item terdata</span>
+              </div>
+              <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">Total tugas di project ini</p>
+            </div>
+            <div class="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+              <span id="statTodoBreakdown" class="font-medium">3 belum • 3 berjalan • 2 selesai</span>
+              <span class="font-semibold text-zinc-800 dark:text-zinc-200">Q4 Sprint</span>
+            </div>
+          </article>
+
+          <!-- Bento 2: Sedang Berjalan -->
+          <article class="relative overflow-hidden rounded-3xl bg-white dark:bg-[#17171B] p-5 sm:p-6 border border-zinc-200/80 dark:border-zinc-800 shadow-tactile flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="w-10 h-10 rounded-2xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                <i data-lucide="clock-3" class="w-5 h-5"></i>
+              </span>
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span> Sedang berjalan
+              </span>
+            </div>
+            <div class="my-4">
+              <div class="flex items-baseline gap-2">
+                <span id="statInProgress" class="text-4xl font-extrabold tracking-tight font-mono text-zinc-900 dark:text-white">3</span>
+                <span class="text-xs font-medium text-amber-600 dark:text-amber-400">fokus utama</span>
+              </div>
+              <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">Tugas yang sedang dikerjakan</p>
+            </div>
+            <div class="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-xs">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                <span class="w-2 h-2 rounded-full bg-amber-400/60"></span>
+                <span class="w-2 h-2 rounded-full bg-amber-300/40"></span>
+              </div>
+              <span class="font-medium text-zinc-500 dark:text-zinc-400">Tetap semangat!</span>
+            </div>
+          </article>
+
+          <!-- Bento 3: Progress Selesai dengan SVG Ring -->
+          <article class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-white via-white to-emerald-50/60 dark:from-[#17171B] dark:via-[#17171B] dark:to-emerald-950/20 p-5 sm:p-6 border border-zinc-200/80 dark:border-zinc-800 shadow-tactile flex items-center justify-between gap-4">
+            <div class="flex flex-col justify-between h-full">
+              <div class="inline-flex items-center gap-2">
+                <span class="w-9 h-9 rounded-2xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+                </span>
+                <span class="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Progress selesai</span>
+              </div>
+              <div class="my-3">
+                <div class="text-4xl font-extrabold tracking-tight font-mono text-zinc-900 dark:text-white">
+                  <span id="statPercent">25</span><span class="text-xl text-emerald-600 dark:text-emerald-400">%</span>
+                </div>
+                <p id="statCompletedText" class="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                  2 dari 8 tugas sudah selesai
+                </p>
+              </div>
+              <div class="w-full max-w-[180px] h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                <div id="statProgressBar" class="h-full rounded-full bg-emerald-500 transition-all duration-500" style="width: 25%"></div>
+              </div>
+            </div>
+
+            <!-- Circular Progress Ring -->
+            <div class="relative w-24 h-24 shrink-0 flex items-center justify-center">
+              <svg class="w-24 h-24" viewBox="0 0 88 88">
+                <circle cx="44" cy="44" r="36" stroke="currentColor" stroke-width="8" fill="transparent" class="text-zinc-100 dark:text-zinc-800" />
+                <circle id="progressRingCircle" cx="44" cy="44" r="36" stroke="#10B981" stroke-width="8" stroke-linecap="round" fill="transparent" stroke-dasharray="226.19" stroke-dashoffset="169.64" class="progress-ring-circle" />
+              </svg>
+              <span id="ringLabel" class="absolute font-mono text-xs font-bold text-zinc-800 dark:text-zinc-200">25%</span>
+            </div>
+          </article>
+        </section>
+
+        <!-- BOARD SECTION -->
+        <section id="board" class="space-y-5">
+          
+          <!-- Board Header & Team Avatar Stack -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-2.5">
+                <h2 class="text-xl sm:text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-white">Papan tugas</h2>
+                <span id="boardVisibleCount" class="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">8</span>
+              </div>
+              <p class="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">Seret kartu antar kolom atau klik checklist untuk memperbarui progres.</p>
+            </div>
+
+            <!-- Interactive Team Filter Stack -->
+            <div id="team" class="flex items-center gap-3">
+              <div class="flex items-center -space-x-2" role="group" aria-label="Filter berdasarkan anggota tim">
+                <button onclick="toggleMemberFilter('Alex')" data-member="Alex" title="Filter tugas Alex (AK)" class="member-avatar w-9 h-9 rounded-full bg-gradient-to-tr from-[#5E5CE6] to-fuchsia-500 text-white text-xs font-bold ring-2 ring-[#F8F7F4] dark:ring-[#111114] hover:scale-110 hover:z-10 transition-transform cursor-pointer">
+                  AK
+                </button>
+                <button onclick="toggleMemberFilter('Maya')" data-member="Maya" title="Filter tugas Maya (MC)" class="member-avatar w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-white text-xs font-bold ring-2 ring-[#F8F7F4] dark:ring-[#111114] hover:scale-110 hover:z-10 transition-transform cursor-pointer">
+                  MC
+                </button>
+                <button onclick="toggleMemberFilter('Raka')" data-member="Raka" title="Filter tugas Raka (RP)" class="member-avatar w-9 h-9 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-500 text-white text-xs font-bold ring-2 ring-[#F8F7F4] dark:ring-[#111114] hover:scale-110 hover:z-10 transition-transform cursor-pointer">
+                  RP
+                </button>
+                <button onclick="clearMemberFilter()" title="Tampilkan semua anggota" class="w-9 h-9 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-bold ring-2 ring-[#F8F7F4] dark:ring-[#111114] hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors cursor-pointer">
+                  +2
+                </button>
+              </div>
+
+              <button onclick="copyBoardShareLink()" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:border-[#5E5CE6]/50 transition-all shadow-2xs cursor-pointer">
+                <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+                <span>Bagikan</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Board Toolbar (Tabs, Priority Filter, Sort) -->
+          <div class="flex flex-wrap items-center justify-between gap-3 p-2 rounded-2xl bg-white/80 dark:bg-[#17171B]/80 backdrop-blur-xs border border-zinc-200/80 dark:border-zinc-800 shadow-2xs">
+            
+            <!-- Filter Tabs -->
+            <div class="flex items-center gap-1 p-1 rounded-xl bg-[#F8F7F4] dark:bg-zinc-900">
+              <button id="tabAll" onclick="setAssigneeTab(false)" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-2xs transition-all cursor-pointer">
+                Semua tugas
+              </button>
+              <button id="tabMine" onclick="setAssigneeTab(true)" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all cursor-pointer">
+                Ditugaskan ke saya
+              </button>
+            </div>
+
+            <!-- Active Member Chip (shown if filtered by MC/RP) -->
+            <div id="activeFilterBadge" class="hidden items-center gap-1.5 px-3 py-1 rounded-full bg-[#5E5CE6]/10 text-[#5E5CE6] dark:text-indigo-300 text-xs font-semibold">
+              <span id="activeFilterText">Anggota: Maya</span>
+              <button onclick="clearMemberFilter()" class="hover:text-rose-500"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+            </div>
+
+            <!-- Right Controls: Priority & Sort -->
+            <div class="flex items-center gap-2 ml-auto">
+              <div class="relative flex items-center">
+                <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 text-zinc-400 absolute left-3 pointer-events-none"></i>
+                <select id="priorityFilter" onchange="setPriorityFilter(this.value)" aria-label="Filter prioritas" class="h-9 pl-8 pr-8 rounded-xl bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 focus:outline-none focus:border-[#5E5CE6] appearance-none cursor-pointer">
+                  <option value="all">Semua prioritas</option>
+                  <option value="high">Prioritas tinggi</option>
+                  <option value="medium">Prioritas sedang</option>
+                  <option value="low">Prioritas rendah</option>
+                </select>
+                <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-zinc-400 absolute right-2.5 pointer-events-none"></i>
+              </div>
+
+              <button id="sortBtn" onclick="toggleSortMode()" class="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:border-[#5E5CE6]/50 transition-all cursor-pointer" title="Urutkan tugas">
+                <i data-lucide="arrow-down-up" class="w-3.5 h-3.5 text-[#5E5CE6]"></i>
+                <span id="sortLabel" class="hidden sm:inline">Urutan Default</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KANBAN 3 COLUMNS GRID -->
+          <div id="kanbanColumns" class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+            <!-- Rendered dynamically via JS -->
+          </div>
+
+        </section>
+
+        <!-- FOOTER -->
+        <footer class="pt-6 pb-4 border-t border-zinc-200/70 dark:border-zinc-800/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-zinc-400 dark:text-zinc-500">
+          <span>Ruang Workspace • Semua perubahan tersimpan otomatis di browser</span>
+          <span class="inline-flex items-center gap-2 font-medium text-zinc-600 dark:text-zinc-400">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Tersimpan lokal
+          </span>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <!-- MODAL CREATE / EDIT TASK -->
+  <div id="taskModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-zinc-950/50 backdrop-blur-xs">
+    <div class="w-full max-w-lg rounded-3xl bg-white dark:bg-[#18181C] border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden modal-animate" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      
+      <!-- Modal Header -->
+      <div class="flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-zinc-100 dark:border-zinc-800">
+        <div class="flex items-center gap-3">
+          <span class="w-10 h-10 rounded-2xl bg-[#5E5CE6]/10 text-[#5E5CE6] flex items-center justify-center">
+            <i data-lucide="list-todo" class="w-5 h-5"></i>
+          </span>
+          <div>
+            <h3 id="modalTitle" class="text-base sm:text-lg font-extrabold text-zinc-900 dark:text-white">Buat tugas baru</h3>
+            <p id="modalSubtitle" class="text-xs text-zinc-500 dark:text-zinc-400">Tambahkan detail tugas ke project Product launch.</p>
+          </div>
+        </div>
+        <button onclick="closeTaskModal()" class="p-1.5 rounded-xl text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors" aria-label="Tutup dialog">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Modal Form -->
+      <form id="taskForm" onsubmit="handleSaveTask(event)" class="p-5 sm:p-6 space-y-4">
+        <input type="hidden" id="taskIdInput" />
+
+        <div>
+          <label for="taskTitleInput" class="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+            Nama tugas <span class="text-rose-500">*</span>
+          </label>
+          <input
+            id="taskTitleInput"
+            type="text"
+            maxlength="100"
+            placeholder="Contoh: Rancang halaman utama"
+            class="w-full h-10 px-3.5 rounded-xl bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-[#5E5CE6] focus:ring-3 focus:ring-[#5E5CE6]/15"
+          />
+        </div>
+
+        <div>
+          <label for="taskDescInput" class="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+            Deskripsi <span class="font-normal text-zinc-400">(Opsional)</span>
+          </label>
+          <textarea
+            id="taskDescInput"
+            rows="3"
+            placeholder="Jelaskan apa yang perlu dikerjakan..."
+            class="w-full p-3.5 rounded-xl bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-[#5E5CE6] focus:ring-3 focus:ring-[#5E5CE6]/15 resize-none"
+          ></textarea>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <div>
+            <label for="taskStatusInput" class="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Status</label>
+            <select id="taskStatusInput" class="w-full h-10 px-3 rounded-xl bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-[#5E5CE6]">
+              <option value="todo">Belum dikerjakan</option>
+              <option value="in-progress">Sedang dikerjakan</option>
+              <option value="done">Selesai</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="taskPriorityInput" class="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Prioritas</label>
+            <select id="taskPriorityInput" class="w-full h-10 px-3 rounded-xl bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-[#5E5CE6]">
+              <option value="low">Rendah</option>
+              <option value="medium" selected>Sedang</option>
+              <option value="high">Tinggi</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          <div>
+            <label for="taskLabelInput" class="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Kategori / Label</label>
+            <input
+              id="taskLabelInput"
+              type="text"
+              maxlength="24"
+              list="labelSuggestions"
+              placeholder="Desain, Riset..."
+              class="w-full h-10 px-3 rounded-xl bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-[#5E5CE6]"
+            />
+            <datalist id="labelSuggestions">
+              <option value="Riset"></option>
+              <option value="Produk"></option>
+              <option value="Desain"></option>
+              <option value="Engineering"></option>
+            </datalist>
+          </div>
+
+          <div>
+            <label for="taskAssigneeInput" class="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Assignee</label>
+            <select id="taskAssigneeInput" class="w-full h-10 px-3 rounded-xl bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-[#5E5CE6]">
+              <option value="Alex">Alex (AK)</option>
+              <option value="Maya">Maya (MC)</option>
+              <option value="Raka">Raka (RP)</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="taskDueDateInput" class="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Tenggat waktu</label>
+            <input
+              id="taskDueDateInput"
+              type="date"
+              class="w-full h-10 px-3 rounded-xl bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-[#5E5CE6]"
+            />
+          </div>
+        </div>
+
+        <p id="formErrorMsg" class="hidden text-xs font-semibold text-rose-500 bg-rose-500/10 px-3 py-2 rounded-xl"></p>
+
+        <div class="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2">
+          <button id="deleteTaskBtn" type="button" onclick="deleteCurrentEditingTask()" class="hidden items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            <span>Hapus</span>
+          </button>
+
+          <div class="flex items-center gap-2 ml-auto">
+            <button type="button" onclick="closeTaskModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+              Batal
+            </button>
+            <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#5E5CE6] hover:bg-indigo-600 text-white text-xs font-bold shadow-sm transition-all cursor-pointer">
+              <i data-lucide="check" class="w-4 h-4"></i>
+              <span id="submitBtnLabel">Buat tugas</span>
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script>
+    // --- INITIAL DATA & CONSTANTS ---
+    const STORAGE_KEY = "ruang-kanban-tasks";
+
+    const INITIAL_TASKS = [
+      {
+        id: "task-1",
+        title: "Riset kebutuhan pengguna",
+        description: "Rangkum insight dari interview dan susun pain point utama.",
+        status: "todo",
+        priority: "high",
+        assignee: "Alex",
+        dueDate: "2026-11-21",
+        label: "Riset",
+        checklist: { completed: 2, total: 5 },
+        comments: 3,
+      },
+      {
+        id: "task-2",
+        title: "Susun sitemap produk",
+        description: "Petakan halaman inti untuk pengalaman pengguna yang lebih ringkas.",
+        status: "todo",
+        priority: "medium",
+        assignee: "Maya",
+        dueDate: "2026-11-24",
+        label: "Produk",
+        checklist: { completed: 1, total: 3 },
+      },
+      {
+        id: "task-3",
+        title: "Audit kompetitor",
+        description: "Bandingkan pola navigasi dan fitur dari tiga produk serupa.",
+        status: "todo",
+        priority: "low",
+        assignee: "Alex",
+        dueDate: "2026-11-26",
+        label: "Riset",
+        comments: 1,
+      },
+      {
+        id: "task-4",
+        title: "Rancang design system",
+        description: "Rapikan komponen dasar, warna, dan aturan tipografi.",
+        status: "in-progress",
+        priority: "high",
+        assignee: "Maya",
+        dueDate: "2026-11-22",
+        label: "Desain",
+        checklist: { completed: 6, total: 8 },
+        comments: 4,
+      },
+      {
+        id: "task-5",
+        title: "Buat alur onboarding",
+        description: "Sederhanakan langkah pertama agar pengguna cepat memahami produk.",
+        status: "in-progress",
+        priority: "medium",
+        assignee: "Alex",
+        dueDate: "2026-11-25",
+        label: "Produk",
+        checklist: { completed: 3, total: 6 },
+        comments: 2,
+      },
+      {
+        id: "task-6",
+        title: "Siapkan ilustrasi produk",
+        description: "Buat ilustrasi ringan untuk layar kosong dan onboarding.",
+        status: "in-progress",
+        priority: "low",
+        assignee: "Raka",
+        dueDate: "2026-11-28",
+        label: "Desain",
+      },
+      {
+        id: "task-7",
+        title: "Buat struktur project",
+        description: "Siapkan fondasi folder dan aturan kerja tim.",
+        status: "done",
+        priority: "medium",
+        assignee: "Alex",
+        dueDate: "2026-11-18",
+        label: "Engineering",
+        checklist: { completed: 4, total: 4 },
+      },
+      {
+        id: "task-8",
+        title: "Tentukan identitas visual",
+        description: "Finalisasi palet warna dan arah visual untuk produk.",
+        status: "done",
+        priority: "high",
+        assignee: "Maya",
+        dueDate: "2026-11-17",
+        label: "Desain",
+        checklist: { completed: 3, total: 3 },
+        comments: 5,
+      },
+    ];
+
+    const COLUMNS = [
+      { id: "todo", title: "Belum dikerjakan", accent: "bg-zinc-400", badgeBg: "bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300" },
+      { id: "in-progress", title: "Sedang dikerjakan", accent: "bg-amber-500", badgeBg: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
+      { id: "done", title: "Selesai", accent: "bg-emerald-500", badgeBg: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
+    ];
+
+    const PRIORITY_META = {
+      high: { label: "Tinggi", dot: "bg-rose-500", pill: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20", weight: 3 },
+      medium: { label: "Sedang", dot: "bg-amber-500", pill: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20", weight: 2 },
+      low: { label: "Rendah", dot: "bg-sky-500", pill: "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20", weight: 1 },
+    };
+
+    // --- APP STATE ---
+    let tasks = [];
+    let searchQuery = "";
+    let priorityFilter = "all";
+    let memberFilter = null; // null | "Alex" | "Maya" | "Raka"
+    let sortMode = "default"; // "default" | "priority" | "dueDate"
+    let draggedTaskId = null;
+
+    // --- STORAGE & INITIALIZATION ---
+    function loadTasks() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            tasks = parsed;
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("Gagal membaca localStorage:", e);
+      }
+      tasks = JSON.parse(JSON.stringify(INITIAL_TASKS));
+      saveTasks();
+    }
+
+    function saveTasks() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      } catch (e) {
+        console.warn("Gagal menyimpan localStorage:", e);
+      }
+    }
+
+    function resetDefaultData() {
+      tasks = JSON.parse(JSON.stringify(INITIAL_TASKS));
+      saveTasks();
+      renderAll();
+      showToast("Data tugas dikembalikan ke pengaturan awal", "info");
+    }
+
+    // --- HELPER FUNCTIONS ---
+    function formatDueDate(dateStr) {
+      if (!dateStr) return "Tanpa tenggat";
+      try {
+        return new Intl.DateTimeFormat("id-ID", {
+          day: "numeric",
+          month: "short",
+        }).format(new Date(`${dateStr}T00:00:00`));
+      } catch {
+        return dateStr;
+      }
+    }
+
+    function getLabelStyle(label) {
+      const normalized = (label || "").toLowerCase();
+      if (normalized.includes("riset")) {
+        return "bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/20";
+      }
+      if (normalized.includes("produk")) {
+        return "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20";
+      }
+      if (normalized.includes("desain")) {
+        return "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20";
+      }
+      if (normalized.includes("eng")) {
+        return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20";
+      }
+      return "bg-[#5E5CE6]/10 text-[#5E5CE6] dark:text-indigo-300 border-[#5E5CE6]/20";
+    }
+
+    function getAvatarInfo(name) {
+      if (name === "Maya") return { initials: "MC", gradient: "from-amber-500 to-orange-500" };
+      if (name === "Raka") return { initials: "RP", gradient: "from-emerald-500 to-teal-500" };
+      return { initials: "AK", gradient: "from-[#5E5CE6] to-fuchsia-500" };
+    }
+
+    // --- FILTERING & SORTING ---
+    function getFilteredAndSortedTasks() {
+      const q = searchQuery.trim().toLowerCase();
+      let filtered = tasks.filter((task) => {
+        const matchesSearch =
+          !q ||
+          `${task.title} ${task.description || ""} ${task.label || ""} ${task.assignee || ""}`
+            .toLowerCase()
+            .includes(q);
+        const matchesPriority = priorityFilter === "all" || task.priority === priorityFilter;
+        const matchesMember = !memberFilter || (task.assignee || "Alex") === memberFilter;
+        return matchesSearch && matchesPriority && matchesMember;
+      });
+
+      if (sortMode === "priority") {
+        filtered = [...filtered].sort(
+          (a, b) => (PRIORITY_META[b.priority]?.weight || 0) - (PRIORITY_META[a.priority]?.weight || 0)
+        );
+      } else if (sortMode === "dueDate") {
+        filtered = [...filtered].sort((a, b) => {
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return a.dueDate.localeCompare(b.dueDate);
+        });
+      }
+      return filtered;
+    }
+
+    // --- RENDERING ---
+    function renderStats() {
+      const total = tasks.length;
+      const todoCount = tasks.filter((t) => t.status === "todo").length;
+      const inProgressCount = tasks.filter((t) => t.status === "in-progress").length;
+      const doneCount = tasks.filter((t) => t.status === "done").length;
+      const percent = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+
+      document.getElementById("sidebarTaskCount").textContent = total;
+      document.getElementById("statTotal").textContent = total;
+      document.getElementById("statTodoBreakdown").textContent = `${todoCount} belum • ${inProgressCount} berjalan • ${doneCount} selesai`;
+      document.getElementById("statInProgress").textContent = inProgressCount;
+      document.getElementById("statPercent").textContent = percent;
+      document.getElementById("statCompletedText").textContent = `${doneCount} dari ${total} tugas sudah selesai`;
+      document.getElementById("statProgressBar").style.width = `${percent}%`;
+      document.getElementById("ringLabel").textContent = `${percent}%`;
+
+      // SVG Circle circumference = 2 * pi * 36 ≈ 226.19
+      const circumference = 226.19;
+      const offset = circumference - (percent / 100) * circumference;
+      document.getElementById("progressRingCircle").style.strokeDashoffset = offset;
+    }
+
+    function renderBoard() {
+      const visibleTasks = getFilteredAndSortedTasks();
+      document.getElementById("boardVisibleCount").textContent = visibleTasks.length;
+
+      const container = document.getElementById("kanbanColumns");
+      container.innerHTML = COLUMNS.map((col) => {
+        const colTasks = visibleTasks.filter((t) => t.status === col.id);
+
+        const cardsHtml = colTasks
+          .map((task) => {
+            const pMeta = PRIORITY_META[task.priority] || PRIORITY_META.medium;
+            const avatar = getAvatarInfo(task.assignee);
+            const hasChecklist = task.checklist && task.checklist.total > 0;
+            const checkDone = hasChecklist && task.checklist.completed >= task.checklist.total;
+
+            return `
+              <article
+                draggable="true"
+                ondragstart="handleDragStart(event, '${task.id}')"
+                ondragend="handleDragEnd(event)"
+                data-task-id="${task.id}"
+                class="task-card group relative rounded-2xl bg-white dark:bg-[#1C1C21] p-4 border border-zinc-200/85 dark:border-zinc-800/90 shadow-tactile hover:shadow-tactile-hover hover:-translate-y-0.5 cursor-grab active:cursor-grabbing"
+              >
+                <!-- Card Top: Label & Actions -->
+                <div class="flex items-center justify-between gap-2 mb-2.5">
+                  ${
+                    task.label
+                      ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-[11px] font-bold border ${getLabelStyle(task.label)}">${escapeHtml(task.label)}</span>`
+                      : `<span></span>`
+                  }
+                  <div class="flex items-center gap-1 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onclick="openEditModal('${task.id}')"
+                      class="p-1.5 rounded-lg text-zinc-400 hover:text-[#5E5CE6] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                      title="Edit tugas"
+                      aria-label="Edit ${escapeHtml(task.title)}"
+                    >
+                      <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button
+                      onclick="deleteTaskById('${task.id}')"
+                      class="p-1.5 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                      title="Hapus tugas"
+                      aria-label="Hapus ${escapeHtml(task.title)}"
+                    >
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Title & Description -->
+                <button onclick="openEditModal('${task.id}')" class="text-left w-full group/title cursor-pointer">
+                  <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100 group-hover/title:text-[#5E5CE6] transition-colors leading-snug ${task.status === 'done' ? 'line-through decoration-zinc-400/70 text-zinc-500 dark:text-zinc-400' : ''}">
+                    ${escapeHtml(task.title)}
+                  </h4>
+                </button>
+                ${
+                  task.description
+                    ? `<p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">${escapeHtml(task.description)}</p>`
+                    : ""
+                }
+
+                <!-- Priority & Due Date -->
+                <div class="flex flex-wrap items-center gap-2 mt-3.5">
+                  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${pMeta.pill}">
+                    <span class="w-1.5 h-1.5 rounded-full ${pMeta.dot}"></span>
+                    ${pMeta.label}
+                  </span>
+                  <span class="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                    <i data-lucide="calendar" class="w-3 h-3"></i>
+                    ${formatDueDate(task.dueDate)}
+                  </span>
+                </div>
+
+                <!-- Footer: Assignee, Interactive Checklist, Comments & Quick Move -->
+                <div class="mt-3.5 pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2.5">
+                    <span title="Ditugaskan ke ${escapeHtml(task.assignee || 'Alex')}" class="w-6 h-6 rounded-full bg-gradient-to-tr ${avatar.gradient} text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                      ${avatar.initials}
+                    </span>
+
+                    ${
+                      hasChecklist
+                        ? `<button
+                            onclick="incrementChecklist('${task.id}')"
+                            title="Klik untuk memperbarui progres checklist"
+                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold transition-colors cursor-pointer ${
+                              checkDone
+                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-[#5E5CE6]/15 hover:text-[#5E5CE6]"
+                            }"
+                          >
+                            <i data-lucide="check-square" class="w-3 h-3"></i>
+                            ${task.checklist.completed}/${task.checklist.total}
+                          </button>`
+                        : ""
+                    }
+
+                    ${
+                      task.comments
+                        ? `<span class="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-400">
+                            <i data-lucide="message-square" class="w-3 h-3"></i>
+                            ${task.comments}
+                          </span>`
+                        : ""
+                    }
+                  </div>
+
+                  <!-- Quick Status Select -->
+                  <div class="relative flex items-center">
+                    <select
+                      aria-label="Ubah status ${escapeHtml(task.title)}"
+                      onchange="moveTask('${task.id}', this.value)"
+                      class="h-7 pl-2 pr-6 rounded-lg bg-[#F8F7F4] dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 hover:border-[#5E5CE6]/50 focus:outline-none appearance-none cursor-pointer"
+                    >
+                      ${COLUMNS.map(
+                        (opt) => `<option value="${opt.id}" ${opt.id === task.status ? "selected" : ""}>${opt.title}</option>`
+                      ).join("")}
+                    </select>
+                    <i data-lucide="chevron-down" class="w-3 h-3 text-zinc-400 absolute right-1.5 pointer-events-none"></i>
+                  </div>
+                </div>
+              </article>
+            `;
+          })
+          .join("");
+
+        const emptyStateHtml =
+          colTasks.length === 0
+            ? `<div class="rounded-2xl border border-dashed border-zinc-300/80 dark:border-zinc-800 p-6 text-center space-y-1.5">
+                <i data-lucide="circle-dashed" class="w-6 h-6 mx-auto text-zinc-400"></i>
+                <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  ${searchQuery || memberFilter || priorityFilter !== "all" ? "Tidak ada tugas yang cocok" : "Belum ada tugas di kolom ini"}
+                </p>
+              </div>`
+            : "";
+
+        return `
+          <section
+            aria-label="${col.title}"
+            ondragover="handleDragOver(event)"
+            ondragleave="handleDragLeave(event)"
+            ondrop="handleDrop(event, '${col.id}')"
+            class="kanban-dropzone rounded-3xl bg-zinc-200/45 dark:bg-[#151519] p-3.5 sm:p-4 border border-zinc-200/70 dark:border-zinc-800/80 space-y-3.5 min-h-[340px]"
+          >
+            <!-- Column Header -->
+            <div class="flex items-center justify-between px-1">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full ${col.accent}"></span>
+                <h3 class="text-sm font-extrabold text-zinc-800 dark:text-zinc-100">${col.title}</h3>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold ${col.badgeBg}">${colTasks.length}</span>
+              </div>
+              <button
+                onclick="openCreateModal('${col.id}')"
+                class="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-500 hover:bg-white dark:hover:bg-zinc-800 hover:text-[#5E5CE6] transition-colors cursor-pointer"
+                title="Tambah tugas ke ${col.title}"
+              >
+                <i data-lucide="plus" class="w-4 h-4"></i>
+              </button>
+            </div>
+
+            <!-- Task List -->
+            <div class="space-y-3">
+              ${cardsHtml}
+              ${emptyStateHtml}
+            </div>
+
+            <!-- Add Task Footer Button -->
+            <button
+              onclick="openCreateModal('${col.id}')"
+              class="w-full py-2.5 rounded-xl border border-dashed border-zinc-300/90 dark:border-zinc-800 text-xs font-semibold text-zinc-500 dark:text-zinc-400 hover:border-[#5E5CE6] hover:text-[#5E5CE6] hover:bg-white/60 dark:hover:bg-zinc-900/60 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            >
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>Tambah tugas</span>
+            </button>
+          </section>
+        `;
+      }).join("");
+
+      lucide.createIcons();
+    }
+
+    function renderAll() {
+      renderStats();
+      renderBoard();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // --- DRAG & DROP HANDLERS ---
+    function handleDragStart(event, taskId) {
+      draggedTaskId = taskId;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", taskId);
+      requestAnimationFrame(() => {
+        event.target.classList.add("dragging");
+      });
+    }
+
+    function handleDragEnd(event) {
+      event.target.classList.remove("dragging");
+      document.querySelectorAll(".kanban-dropzone").forEach((el) => el.classList.remove("drag-over"));
+    }
+
+    function handleDragOver(event) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      event.currentTarget.classList.add("drag-over");
+    }
+
+    function handleDragLeave(event) {
+      if (!event.currentTarget.contains(event.relatedTarget)) {
+        event.currentTarget.classList.remove("drag-over");
+      }
+    }
+
+    function handleDrop(event, targetStatus) {
+      event.preventDefault();
+      event.currentTarget.classList.remove("drag-over");
+      const taskId = event.dataTransfer.getData("text/plain") || draggedTaskId;
+      if (taskId) {
+        moveTask(taskId, targetStatus);
+      }
+      draggedTaskId = null;
+    }
+
+    // --- TASK MUTATIONS ---
+    function moveTask(taskId, newStatus) {
+      const target = tasks.find((t) => t.id === taskId);
+      if (!target || target.status === newStatus) return;
+
+      target.status = newStatus;
+      if (newStatus === "done" && target.checklist) {
+        target.checklist.completed = target.checklist.total;
+      }
+      saveTasks();
+      renderAll();
+
+      const colName = COLUMNS.find((c) => c.id === newStatus)?.title || newStatus;
+      showToast(`"${target.title}" dipindahkan ke ${colName}`, "success");
+    }
+
+    function incrementChecklist(taskId) {
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task || !task.checklist) return;
+
+      task.checklist.completed =
+        task.checklist.completed >= task.checklist.total ? 0 : task.checklist.completed + 1;
+
+      if (task.checklist.completed === task.checklist.total && task.status !== "done") {
+        task.status = "done";
+        showToast(`Semua checklist selesai! "${task.title}" otomatis ditandai Selesai.`, "success");
+      }
+      saveTasks();
+      renderAll();
+    }
+
+    function deleteTaskById(taskId) {
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task) return;
+      tasks = tasks.filter((t) => t.id !== taskId);
+      saveTasks();
+      renderAll();
+      showToast(`Tugas "${task.title}" dihapus`, "info");
+    }
+
+    // --- MODAL LOGIC ---
+    function openCreateModal(defaultStatus = "todo") {
+      document.getElementById("taskIdInput").value = "";
+      document.getElementById("taskTitleInput").value = "";
+      document.getElementById("taskDescInput").value = "";
+      document.getElementById("taskStatusInput").value = defaultStatus;
+      document.getElementById("taskPriorityInput").value = "medium";
+      document.getElementById("taskLabelInput").value = "";
+      document.getElementById("taskAssigneeInput").value = "Alex";
+      document.getElementById("taskDueDateInput").value = "2026-11-27";
+
+      document.getElementById("modalTitle").textContent = "Buat tugas baru";
+      document.getElementById("modalSubtitle").textContent = "Tambahkan detail tugas ke project aktif.";
+      document.getElementById("submitBtnLabel").textContent = "Buat tugas";
+      document.getElementById("deleteTaskBtn").classList.add("hidden");
+      document.getElementById("deleteTaskBtn").classList.remove("inline-flex");
+      document.getElementById("formErrorMsg").classList.add("hidden");
+
+      const modal = document.getElementById("taskModal");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      setTimeout(() => document.getElementById("taskTitleInput").focus(), 50);
+    }
+
+    function openEditModal(taskId) {
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task) return;
+
+      document.getElementById("taskIdInput").value = task.id;
+      document.getElementById("taskTitleInput").value = task.title;
+      document.getElementById("taskDescInput").value = task.description || "";
+      document.getElementById("taskStatusInput").value = task.status;
+      document.getElementById("taskPriorityInput").value = task.priority;
+      document.getElementById("taskLabelInput").value = task.label || "";
+      document.getElementById("taskAssigneeInput").value = task.assignee || "Alex";
+      document.getElementById("taskDueDateInput").value = task.dueDate || "";
+
+      document.getElementById("modalTitle").textContent = "Edit tugas";
+      document.getElementById("modalSubtitle").textContent = "Perbarui detail tugas agar tim tetap selaras.";
+      document.getElementById("submitBtnLabel").textContent = "Simpan perubahan";
+      document.getElementById("deleteTaskBtn").classList.remove("hidden");
+      document.getElementById("deleteTaskBtn").classList.add("inline-flex");
+      document.getElementById("formErrorMsg").classList.add("hidden");
+
+      const modal = document.getElementById("taskModal");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      setTimeout(() => document.getElementById("taskTitleInput").focus(), 50);
+    }
+
+    function closeTaskModal() {
+      const modal = document.getElementById("taskModal");
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    }
+
+    function handleSaveTask(event) {
+      event.preventDefault();
+      const id = document.getElementById("taskIdInput").value;
+      const title = document.getElementById("taskTitleInput").value.trim();
+      const description = document.getElementById("taskDescInput").value.trim();
+      const status = document.getElementById("taskStatusInput").value;
+      const priority = document.getElementById("taskPriorityInput").value;
+      const label = document.getElementById("taskLabelInput").value.trim();
+      const assignee = document.getElementById("taskAssigneeInput").value;
+      const dueDate = document.getElementById("taskDueDateInput").value;
+
+      if (!title) {
+        const err = document.getElementById("formErrorMsg");
+        err.textContent = "Tambahkan nama tugas terlebih dahulu agar mudah ditemukan.";
+        err.classList.remove("hidden");
+        return;
+      }
+
+      if (id) {
+        tasks = tasks.map((t) =>
+          t.id === id
+            ? { ...t, title, description, status, priority, label: label || undefined, assignee, dueDate: dueDate || undefined }
+            : t
+        );
+        showToast(`Perubahan pada "${title}" disimpan`, "success");
+      } else {
+        const newTask = {
+          id: "task-" + Date.now(),
+          title,
+          description,
+          status,
+          priority,
+          label: label || "Produk",
+          assignee,
+          dueDate: dueDate || undefined,
+          checklist: { completed: 0, total: 3 },
+        };
+        tasks.unshift(newTask);
+        showToast(`Tugas baru "${title}" ditambahkan`, "success");
+      }
+
+      saveTasks();
+      renderAll();
+      closeTaskModal();
+    }
+
+    function deleteCurrentEditingTask() {
+      const id = document.getElementById("taskIdInput").value;
+      if (id) {
+        deleteTaskById(id);
+        closeTaskModal();
+      }
+    }
+
+    // --- TOOLBAR & NAVIGATION CONTROLS ---
+    function handleSearch(val) {
+      searchQuery = val;
+      const clearBtn = document.getElementById("clearSearchBtn");
+      if (val.trim()) {
+        clearBtn.classList.remove("hidden");
+      } else {
+        clearBtn.classList.add("hidden");
+      }
+      renderBoard();
+    }
+
+    function clearSearch() {
+      const input = document.getElementById("searchInput");
+      input.value = "";
+      handleSearch("");
+      input.focus();
+    }
+
+    function setAssigneeTab(onlyMine) {
+      memberFilter = onlyMine ? "Alex" : null;
+      updateFilterUI();
+      renderBoard();
+    }
+
+    function toggleMemberFilter(name) {
+      memberFilter = memberFilter === name ? null : name;
+      updateFilterUI();
+      renderBoard();
+    }
+
+    function clearMemberFilter() {
+      memberFilter = null;
+      updateFilterUI();
+      renderBoard();
+    }
+
+    function updateFilterUI() {
+      const tabAll = document.getElementById("tabAll");
+      const tabMine = document.getElementById("tabMine");
+      const badge = document.getElementById("activeFilterBadge");
+      const badgeText = document.getElementById("activeFilterText");
+
+      if (memberFilter === "Alex") {
+        tabMine.className = "px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-2xs transition-all cursor-pointer";
+        tabAll.className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all cursor-pointer";
+        badge.classList.add("hidden");
+        badge.classList.remove("inline-flex");
+      } else {
+        tabAll.className = "px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-2xs transition-all cursor-pointer";
+        tabMine.className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all cursor-pointer";
+        if (memberFilter) {
+          badgeText.textContent = `Anggota: ${memberFilter}`;
+          badge.classList.remove("hidden");
+          badge.classList.add("inline-flex");
+        } else {
+          badge.classList.add("hidden");
+          badge.classList.remove("inline-flex");
+        }
+      }
+
+      document.querySelectorAll(".member-avatar").forEach((btn) => {
+        if (btn.dataset.member === memberFilter) {
+          btn.classList.add("ring-[#5E5CE6]", "scale-110", "z-10");
+        } else {
+          btn.classList.remove("ring-[#5E5CE6]", "scale-110", "z-10");
+        }
+      });
+    }
+
+    function setPriorityFilter(val) {
+      priorityFilter = val;
+      renderBoard();
+    }
+
+    function toggleSortMode() {
+      const label = document.getElementById("sortLabel");
+      if (sortMode === "default") {
+        sortMode = "priority";
+        label.textContent = "Prioritas Tertinggi";
+      } else if (sortMode === "priority") {
+        sortMode = "dueDate";
+        label.textContent = "Tenggat Terdekat";
+      } else {
+        sortMode = "default";
+        label.textContent = "Urutan Default";
+      }
+      renderBoard();
+    }
+
+    function selectProject(projectName, btnEl) {
+      document.getElementById("currentProjectBreadcrumb").textContent = projectName;
+      document.querySelectorAll(".project-btn").forEach((btn) => {
+        btn.className = "project-btn w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50 transition-all";
+      });
+      btnEl.className = "project-btn w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold bg-zinc-100 dark:bg-zinc-800/90 text-zinc-900 dark:text-white transition-all";
+      toggleMobileSidebar(false);
+      showToast(`Beralih ke proyek ${projectName}`, "info");
+    }
+
+    function setActiveNav(el) {
+      document.querySelectorAll(".nav-item").forEach((item) => {
+        item.className = "nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/80 dark:hover:bg-zinc-800/70 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors";
+      });
+      el.className = "nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold bg-[#5E5CE6]/10 text-[#5E5CE6] dark:bg-[#5E5CE6]/20 dark:text-indigo-300 transition-colors";
+      toggleMobileSidebar(false);
+    }
+
+    function toggleMobileSidebar(open) {
+      const sidebar = document.getElementById("sidebar");
+      const backdrop = document.getElementById("sidebarBackdrop");
+      if (open) {
+        sidebar.classList.remove("-translate-x-full");
+        backdrop.classList.remove("hidden");
+      } else {
+        sidebar.classList.add("-translate-x-full");
+        backdrop.classList.add("hidden");
+      }
+    }
+
+    function toggleDarkMode() {
+      const isDark = document.documentElement.classList.toggle("dark");
+      localStorage.setItem("ruang-theme", isDark ? "dark" : "light");
+    }
+
+    function toggleNotifications() {
+      const pop = document.getElementById("notifPopover");
+      pop.classList.toggle("hidden");
+      document.getElementById("notifDot").classList.add("hidden");
+    }
+
+    function cycleWorkspace() {
+      showToast("Workspace aktif: Studio Kreatif (Pro)", "info");
+    }
+
+    function copyBoardShareLink() {
+      const dummyInput = document.createElement("input");
+      dummyInput.value = window.location.href;
+      document.body.appendChild(dummyInput);
+      dummyInput.select();
+      document.execCommand("copy");
+      document.body.removeChild(dummyInput);
+      showToast("Tautan papan tugas disalin ke clipboard!", "success");
+    }
+
+    // --- TOAST NOTIFICATIONS ---
+    function showToast(message, type = "success") {
+      const container = document.getElementById("toastContainer");
+      const toast = document.createElement("div");
+      const iconName = type === "success" ? "check-circle-2" : "sparkles";
+      const iconColor = type === "success" ? "text-emerald-400" : "text-indigo-400";
+
+      toast.className =
+        "toast-enter pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-zinc-900 dark:bg-zinc-800 text-white text-xs font-semibold shadow-xl border border-zinc-800 dark:border-zinc-700 max-w-sm";
+      toast.innerHTML = `
+        <i data-lucide="${iconName}" class="w-4 h-4 ${iconColor} shrink-0"></i>
+        <span>${escapeHtml(message)}</span>
+      `;
+      container.appendChild(toast);
+      lucide.createIcons();
+
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateY(8px)";
+        toast.style.transition = "all 0.2s ease";
+        setTimeout(() => toast.remove(), 220);
+      }, 2800);
+    }
+
+    // --- KEYBOARD SHORTCUTS (Cmd/Ctrl + K & Esc) ---
+    document.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        document.getElementById("searchInput").focus();
+      }
+      if (e.key === "Escape") {
+        closeTaskModal();
+        document.getElementById("notifPopover").classList.add("hidden");
+      }
+    });
+
+    // Close notification popover on outside click
+    document.addEventListener("click", (e) => {
+      const pop = document.getElementById("notifPopover");
+      if (!pop.classList.contains("hidden") && !e.target.closest("#notifPopover") && !e.target.closest("[aria-label='Notifikasi']")) {
+        pop.classList.add("hidden");
+      }
+    });
+
+    // --- BOOTSTRAP APP ---
+    (function init() {
+      if (localStorage.getItem("ruang-theme") === "dark") {
+        document.documentElement.classList.add("dark");
+      }
+      loadTasks();
+      renderAll();
+    })();
+  </script>
+</body>
+</html>
